@@ -78,5 +78,7 @@ variable "ecr_settings" {
     "php_ecr_repo_tag" = "latest",
     "nginx_ecr_repo_url" = "729581434105.dkr.ecr.us-west-2.amazonaws.com/laravel-on-ecs-dzg-nginx",
     "nginx_ecr_repo_tag" = "latest",
+    "nginx_ecr_repo_url" = "729581434105.dkr.ecr.us-west-2.amazonaws.com/laravel-on-ecs-dzg-proxysql",
+    "nginx_ecr_repo_tag" = "latest",
   }
 }

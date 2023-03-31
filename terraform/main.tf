@@ -56,6 +56,42 @@ resource "aws_ecs_cluster" "ecs_cluster" {
   tags = var.tags
 }
 
+# IAM for ECS task
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "ecs-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  role       = aws_iam_role.ecs_execution_role.name
+}
+
+
+# EFS for proxysql socket
+resource "aws_efs_file_system" "proxysql_socket" {
+  creation_token = "${var.name_prefix}-efs"
+
+  tags = var.tags
+}
+
+resource "aws_efs_mount_target" "proxysql_socket" {
+  for_each          = toset(module.vpc.private_subnets)
+  file_system_id    = aws_efs_file_system.proxysql_socket.id
+  subnet_id         = each.value
+}
+
 ## ECS task
 resource "aws_ecs_task_definition" "ecs_task_definition" {
   family                   = "${var.name_prefix}-ecs-task"
@@ -63,6 +99,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
   network_mode             = "awsvpc"
   cpu                      = "256"
   memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
 
   container_definitions = jsonencode([
     {
@@ -76,9 +113,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
           protocol      = "tcp"
         }
       ]
-      links = [
-        "php:php"
-      ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -165,7 +200,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
       ]
       mountPoints = [
         {
-          sourceVolume  = "proxysql-sock"
+          sourceVolume  = "proxysql-socket-efs-volume"
           containerPath = "/var/lib/proxysql"
         }
       ]
@@ -183,7 +218,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
       image = "${var.ecr_settings["proxysql_ecr_repo_url"]}:${var.ecr_settings["proxysql_ecr_repo_tag"]}"
       mountPoints = [
         {
-          "sourceVolume" = "proxysql-sock"
+          "sourceVolume" = "proxysql-socket-efs-volume"
           "containerPath" = "/var/lib/proxysql"
         }
       ]
@@ -225,6 +260,14 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
       ]
     }
   ])
+  volume {
+    name = "proxysql-socket-efs-volume"
+
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.proxysql_socket.id
+      root_directory = "/"
+    }
+  }
 }
 
 ## ECS service
@@ -243,7 +286,7 @@ resource "aws_ecs_service" "ecs_service" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.nlb_target_group.arn
-    container_name   = "${var.name_prefix}-app"
+    container_name   = "${var.name_prefix}-nginx"
     container_port   = 80
   }
 
@@ -270,6 +313,9 @@ resource "aws_lb_target_group" "nlb_target_group" {
   port     = 80
   protocol = "TCP"
   vpc_id   = module.vpc.vpc_id
+
+  # for ECS service
+  target_type = "ip"
 
   health_check {
     interval            = 30
@@ -308,7 +354,7 @@ resource "aws_db_subnet_group" "aurora_subnet_group" {
 resource "aws_rds_cluster" "aurora_cluster" {
   cluster_identifier      = "${var.name_prefix}-aurora-cluster"
   engine                  = "aurora-mysql"
-  engine_version          = "5.7.mysql_aurora.2.11.1"
+  engine_version          = "5.7.mysql_aurora.2.07.8"
   availability_zones      = var.aws_azs
   database_name           = "${var.db_settings["aurora_db_name"]}"
   master_username         = "${var.db_settings["aurora_db_user"]}"
@@ -316,6 +362,7 @@ resource "aws_rds_cluster" "aurora_cluster" {
   backup_retention_period = 5
   preferred_backup_window = "07:00-09:00"
   vpc_security_group_ids  = [aws_security_group.aurora_sg.id]
+  final_snapshot_identifier = "${var.name_prefix}-aurora-cluster-final-snapshot"
 
   db_subnet_group_name = aws_db_subnet_group.aurora_subnet_group.name
 
@@ -324,8 +371,9 @@ resource "aws_rds_cluster" "aurora_cluster" {
 
 resource "aws_rds_cluster_instance" "aurora_instance" {
   identifier         = "${var.name_prefix}-aurora-instance"
+  engine             = "aurora-mysql"
   cluster_identifier = aws_rds_cluster.aurora_cluster.id
-  instance_class     = "db.t3.small"
+  instance_class     = "db.r5.2xlarge"
 
   tags = var.tags
 }
