@@ -21,7 +21,8 @@ class TestModel extends Model
         'field7',
         'field8',
         'field9',
-        'field10',];
+        'field10',
+    ];
 
 }
 

@@ -10,4 +10,24 @@ services:
 
   php:
     build: ./docker/php
+    volumes:
+      - proxysql-sock:/var/lib/proxysql
+    depends_on:
+      - proxysql
 
+  proxysql:
+    build: ./docker/proxysql
+    volumes:
+      - proxysql-sock:/var/lib/proxysql
+      - ./docker/proxysql/proxysql.cnf.template:/etc/proxysql.cnf.template
+    environment:
+      - BACKEND_TIDB_HOST=host.docker.internal
+      - BACKEND_TIDB_PORT=4000
+      - BACKEND_TIDB_USER=tidb
+      - BACKEND_TIDB_PASS=tidb_password
+      - BACKEND_AURORA_HOST=host.docker.internal
+      - BACKEND_AURORA_PORT=62246 
+      - BACKEND_AURORA_USER=aurora
+      - BACKEND_AURORA_PASS=aurora_password
+volumes:
+  proxysql-sock:

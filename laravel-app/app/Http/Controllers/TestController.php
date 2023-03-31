@@ -11,7 +11,7 @@ class TestController extends Controller
     {
         $dbtype = $request->query('dbtype', 'aurora');
 
-        if (!in_array($dbtype, ['aurora', 'tidb'])) {
+        if (!in_array($dbtype, ['aurora_normal', 'aurora_persistent', 'aurora_with_proxysql', 'tidb_normal', 'tidb_persistent', 'tidb_with_proxysql'])) {
             return response()->json(['error' => 'Invalid dbtype'], 400);
         }
 

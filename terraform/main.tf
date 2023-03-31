@@ -91,6 +91,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
     {
       name  = "${var.name_prefix}-app"
       image = "${var.ecr_settings["php_ecr_repo_url"]}:${var.ecr_settings["php_ecr_repo_tag"]}"
+      essential = true
       portMappings = [
         {
           containerPort = 9000
@@ -139,6 +140,33 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
         {
           name  = "TiDB_DB_PASSWORD"
           value = "${var.db_settings["tidb_db_password"]}"
+        },
+        // proxysql
+        {
+          name  = "PROXYSQL_SOCKET"
+          value = "/var/lib/proxysql/proxysql.sock"
+        },
+        {
+          name  = "PROXYSQL_TIDB_USER"
+          value = "${var.db_settings["tidb_db_user"]}"
+        },
+        {
+          name  = "PROXYSQL_TIDB_PASS"
+          value = "${var.db_settings["tidb_db_password"]}"
+        },
+        {
+          name  = "PROXYSQL_AURORA_USER"
+          value = "${var.db_settings["aurora_db_user"]}"
+        },
+        {
+          name  = "PROXYSQL_AURORA_PASS"
+          value = "${var.db_settings["aurora_db_password"]}"
+        }
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "proxysql-sock"
+          containerPath = "/var/lib/proxysql"
         }
       ]
       logConfiguration = {
@@ -149,6 +177,52 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
           "awslogs-stream-prefix" = "ecs"
         }
       }
+    },
+    {
+      name = "proxysql"
+      image = "${var.ecr_settings["proxysql_ecr_repo_url"]}:${var.ecr_settings["proxysql_ecr_repo_tag"]}"
+      mountPoints = [
+        {
+          "sourceVolume" = "proxysql-sock"
+          "containerPath" = "/var/lib/proxysql"
+        }
+      ]
+      environment = [
+        // aurora
+        {
+          name  = "BACKEND_AURORA_HOST"
+          value = aws_rds_cluster.aurora_cluster.endpoint
+        },
+        {
+          name  = "BACKEND_AURORA_PORT"
+          value = "3306"
+        },
+        {
+          name  = "BACKEND_AURORA_USER"
+          value = "${var.db_settings["aurora_db_user"]}"
+        },
+        {
+          name  = "BACKEND_AURORA_PASS"
+          value = "${var.db_settings["aurora_db_password"]}"
+        },
+        // tidb
+        {
+          name  = "BACKEND_TiDB_HOST"
+          value = "${var.db_settings["tidb_db_host"]}"
+        },
+        {
+          name  = "BACKEND_TiDB_PORT"
+          value = "4000"
+        },
+        {
+          name  = "BACKEND_TiDB_USER"
+          value = "${var.db_settings["tidb_db_user"]}"
+        },
+        {
+          name  = "BACKEND_TiDB_PASS"
+          value = "${var.db_settings["tidb_db_password"]}"
+        }
+      ]
     }
   ])
 }

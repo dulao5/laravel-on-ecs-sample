@@ -1,6 +1,8 @@
 #aws ecr create-repository --repository-name laravel-on-ecs-dzg-php
 aws ecr get-login-password  | docker login --username AWS --password-stdin $ecr_uri-php
+sed -i -e "s/#docker-build# //" docker/php/Dockerfile
 docker build -t laravel-on-ecs-dzg-php -f docker/php/Dockerfile .
+git checkout docker/php/Dockerfile
 docker tag laravel-on-ecs-dzg-php:latest $ecr_uri-php:latest
 docker push $ecr_uri-php:latest
 
@@ -9,3 +11,9 @@ aws ecr get-login-password  | docker login --username AWS --password-stdin $ecr_
 docker build -t laravel-on-ecs-dzg-nginx -f docker/nginx/Dockerfile docker/nginx/
 docker tag laravel-on-ecs-dzg-nginx:latest $ecr_uri-nginx:latest
 docker push $ecr_uri-nginx:latest
+
+#aws ecr create-repository --repository-name laravel-on-ecs-dzg-proxysql
+aws ecr get-login-password  | docker login --username AWS --password-stdin $ecr_uri-proxysql
+docker build -t laravel-on-ecs-dzg-proxysql -f docker/proxysql/Dockerfile docker/proxysql/
+docker tag laravel-on-ecs-dzg-proxysql:latest $ecr_uri-proxysql:latest
+docker push $ecr_uri-proxysql:latest
