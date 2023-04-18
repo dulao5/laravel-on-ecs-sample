@@ -77,7 +77,10 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
   role       = aws_iam_role.ecs_execution_role.name
 }
-
+resource "aws_iam_role_policy_attachment" "ecs_execution_ecr_readonly_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.ecs_execution_role.name
+}
 
 # EFS for proxysql socket
 resource "aws_efs_file_system" "proxysql_socket" {
@@ -86,8 +89,15 @@ resource "aws_efs_file_system" "proxysql_socket" {
   tags = var.tags
 }
 
+locals {
+  private_subnets_map = { for index, subnet in module.vpc.private_subnets : "subnet${index + 1}" => subnet }
+}
+
 resource "aws_efs_mount_target" "proxysql_socket" {
-  for_each          = toset(module.vpc.private_subnets)
+  depends_on = [
+    module.vpc
+  ]
+  for_each          = local.private_subnets_map
   file_system_id    = aws_efs_file_system.proxysql_socket.id
   subnet_id         = each.value
 }
@@ -281,7 +291,7 @@ resource "aws_ecs_service" "ecs_service" {
   network_configuration {
     subnets          = module.vpc.private_subnets
     security_groups  = [aws_security_group.fargate_sg.id, aws_security_group.aurora_sg.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
