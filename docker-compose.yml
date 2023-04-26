@@ -2,21 +2,24 @@
 version: "3.9"
 services:
   nginx:
-    build: ./docker/nginx
+    # build: ./docker/nginx
+    image: 729581434105.dkr.ecr.us-east-1.amazonaws.com/laravel-on-ecs-dzg-nginx:latest
     ports:
       - "80:80"
     depends_on:
       - php
 
   php:
-    build: ./docker/php
+    # build: ./docker/php
+    image: 729581434105.dkr.ecr.us-east-1.amazonaws.com/laravel-on-ecs-dzg-php:latest
     volumes:
       - proxysql-sock:/var/lib/proxysql
     depends_on:
       - proxysql
 
   proxysql:
-    build: ./docker/proxysql
+    # build: ./docker/proxysql
+    image: 729581434105.dkr.ecr.us-east-1.amazonaws.com/laravel-on-ecs-dzg-proxysql:latest
     volumes:
       - proxysql-sock:/var/lib/proxysql
       - ./docker/proxysql/proxysql.cnf.template:/etc/proxysql.cnf.template

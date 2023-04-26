@@ -48,6 +48,93 @@ resource "aws_security_group" "aurora_sg" {
   tags = var.tags
 }
 
+# Fargate Security Group rules
+resource "aws_security_group_rule" "fargate_egress" {
+  security_group_id = aws_security_group.fargate_sg.id
+
+  type        = "egress"
+  from_port   = 0
+  to_port     = 0
+  protocol    = "-1"
+  cidr_blocks = ["0.0.0.0/0"]
+}
+
+# NLB Security Group rules
+resource "aws_security_group_rule" "nlb_ingress" {
+  security_group_id = aws_security_group.nlb_sg.id
+
+  type        = "ingress"
+  from_port   = 80
+  to_port     = 80
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"]
+}
+
+# Aurora Security Group rules
+resource "aws_security_group_rule" "aurora_ingress" {
+  security_group_id = aws_security_group.aurora_sg.id
+
+  type             = "ingress"
+  from_port        = 3306
+  to_port          = 3306
+  protocol         = "tcp"
+  source_security_group_id  = aws_security_group.fargate_sg.id
+}
+
+## allow fargate to access efs
+resource "aws_security_group" "efs" {
+  name_prefix = "efs-sg-"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    security_groups = [aws_security_group.fargate_sg.id]
+  }
+
+  egress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    security_groups = [aws_security_group.fargate_sg.id]
+  }
+
+  tags = {
+    Name = "EFS SG"
+  }
+}
+
+# cloudwatch log group
+resource "aws_cloudwatch_log_group" "ecs_log_group" {
+  name = "${var.name_prefix}-ecs-log-group"
+  tags = var.tags
+}
+
+## nginx->php , php->proxysql のための discovery service // いらないかも
+resource "aws_service_discovery_private_dns_namespace" "ecs" {
+  name        = "${var.name_prefix}.local"
+  description = "${var.name_prefix} Namespace"
+  vpc         = module.vpc.vpc_id
+}
+
+resource "aws_service_discovery_service" "ecs" {
+  name = "${var.name_prefix}-service"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.ecs.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+}
+
 ## ECS cluster
 
 resource "aws_ecs_cluster" "ecs_cluster" {
@@ -72,14 +159,43 @@ resource "aws_iam_role" "ecs_execution_role" {
       }
     ]
   })
-}
-resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-  role       = aws_iam_role.ecs_execution_role.name
-}
-resource "aws_iam_role_policy_attachment" "ecs_execution_ecr_readonly_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.ecs_execution_role.name
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  ]
+
+  inline_policy {
+    name = "ssm-control-and-ecr-token"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = [
+            "ssmmessages:CreateControlChannel",
+            "ssmmessages:OpenControlChannel"
+          ]
+          Resource = "*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "ssmmessages:CreateDataChannel",
+            "ssmmessages:OpenDataChannel"
+          ]
+          Resource = "*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "ecr:GetAuthorizationToken"
+          ]
+          Resource = "*"
+        }
+      ]
+    })
+  }
 }
 
 # EFS for proxysql socket
@@ -100,6 +216,7 @@ resource "aws_efs_mount_target" "proxysql_socket" {
   for_each          = local.private_subnets_map
   file_system_id    = aws_efs_file_system.proxysql_socket.id
   subnet_id         = each.value
+  security_groups   = [aws_security_group.efs.id]
 }
 
 ## ECS task
@@ -113,7 +230,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
 
   container_definitions = jsonencode([
     {
-      name = "${var.name_prefix}-nginx"
+      name = "nginx"
       image = "${var.ecr_settings["nginx_ecr_repo_url"]}:${var.ecr_settings["nginx_ecr_repo_tag"]}"
       essential = true
       portMappings = [
@@ -127,14 +244,18 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"  = "/ecs/${var.name_prefix}-nginx"
+          "awslogs-group"  = "${aws_cloudwatch_log_group.ecs_log_group.name}"
           "awslogs-region" = var.aws_region
-          "awslogs-stream-prefix" = "ecs"
+          "awslogs-stream-prefix" = "nginx"
         }
+      }
+
+      linuxParameters = {
+        initProcessEnabled = true # for use to ecs-exec
       }
     },
     {
-      name  = "${var.name_prefix}-app"
+      name  = "php"
       image = "${var.ecr_settings["php_ecr_repo_url"]}:${var.ecr_settings["php_ecr_repo_tag"]}"
       essential = true
       portMappings = [
@@ -217,10 +338,14 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"  = "/ecs/${var.name_prefix}-app"
+          "awslogs-group"  = "${aws_cloudwatch_log_group.ecs_log_group.name}"
           "awslogs-region" = var.aws_region
-          "awslogs-stream-prefix" = "ecs"
+          "awslogs-stream-prefix" = "php"
         }
+      }
+
+      linuxParameters = {
+        initProcessEnabled = true # for use to ecs-exec
       }
     },
     {
@@ -266,8 +391,24 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
         {
           name  = "BACKEND_TiDB_PASS"
           value = "${var.db_settings["tidb_db_password"]}"
+        },
+        {
+          name  = "Hoge"
+          value = "fuga9"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"  = "${aws_cloudwatch_log_group.ecs_log_group.name}"
+          "awslogs-region" = var.aws_region
+          "awslogs-stream-prefix" = "proxysql"
+        }
+      }
+
+      linuxParameters = {
+        initProcessEnabled = true # for use to ecs-exec
+      }
     }
   ])
   volume {
@@ -296,8 +437,12 @@ resource "aws_ecs_service" "ecs_service" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.nlb_target_group.arn
-    container_name   = "${var.name_prefix}-nginx"
+    container_name   = "nginx"
     container_port   = 80
+  }
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.ecs.arn
   }
 
   depends_on = [
@@ -364,7 +509,7 @@ resource "aws_db_subnet_group" "aurora_subnet_group" {
 resource "aws_rds_cluster" "aurora_cluster" {
   cluster_identifier      = "${var.name_prefix}-aurora-cluster"
   engine                  = "aurora-mysql"
-  engine_version          = "5.7.mysql_aurora.2.07.8"
+  engine_version          = "5.7.mysql_aurora.2.10.3"
   availability_zones      = var.aws_azs
   database_name           = "${var.db_settings["aurora_db_name"]}"
   master_username         = "${var.db_settings["aurora_db_user"]}"
