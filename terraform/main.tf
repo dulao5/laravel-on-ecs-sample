@@ -288,23 +288,23 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
         },
         // tidb
         {
-          name  = "TiDB_DB_HOST"
+          name  = "TIDB_DB_HOST"
           value = "${var.db_settings["tidb_db_host"]}"
         },
         {
-          name  = "TiDB_DB_PORT"
+          name  = "TIDB_DB_PORT"
           value = "4000"
         },
         {
-          name  = "TiDB_DB_NAME"
+          name  = "TIDB_DB_NAME"
           value = "${var.db_settings["tidb_db_name"]}"
         },
         {
-          name  = "TiDB_DB_USER"
+          name  = "TIDB_DB_USER"
           value = "${var.db_settings["tidb_db_user"]}"
         },
         {
-          name  = "TiDB_DB_PASSWORD"
+          name  = "TIDB_DB_PASSWORD"
           value = "${var.db_settings["tidb_db_password"]}"
         },
         // proxysql
@@ -377,19 +377,19 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
         },
         // tidb
         {
-          name  = "BACKEND_TiDB_HOST"
+          name  = "BACKEND_TIDB_HOST"
           value = "${var.db_settings["tidb_db_host"]}"
         },
         {
-          name  = "BACKEND_TiDB_PORT"
+          name  = "BACKEND_TIDB_PORT"
           value = "4000"
         },
         {
-          name  = "BACKEND_TiDB_USER"
+          name  = "BACKEND_TIDB_USER"
           value = "${var.db_settings["tidb_db_user"]}"
         },
         {
-          name  = "BACKEND_TiDB_PASS"
+          name  = "BACKEND_TIDB_PASS"
           value = "${var.db_settings["tidb_db_password"]}"
         },
         {

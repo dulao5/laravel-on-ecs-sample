@@ -37,15 +37,15 @@ mysql_variables=
 mysql_servers =
 (
     {
-        address = "$BACKEND_AURORA_HOST"
-        port = $BACKEND_AURORA_PORT
+        address = "${BACKEND_AURORA_HOST}"
+        port = ${BACKEND_AURORA_PORT}
         hostgroup = 1
         use_ssl = 0
         max_connections = 100
     },
     {
-        address = "$BACKEND_TIDB_HOST"
-        port = $BACKEND_TIDB_PORT
+        address = "${BACKEND_TIDB_HOST}"
+        port = ${BACKEND_TIDB_PORT}
         hostgroup = 2
         use_ssl = 0
         max_connections = 100
@@ -55,15 +55,15 @@ mysql_servers =
 mysql_users =
 (
     {
-        username = "$BACKEND_AURORA_USER"
-        password = "$BACKEND_AURORA_PASS"
+        username = "${BACKEND_AURORA_USER}"
+        password = "${BACKEND_AURORA_PASS}"
         backend = true
         frontend = true
         default_hostgroup = 1
     },
     {
-        username = "$BACKEND_TIDB_USER"
-        password = "$BACKEND_TIDB_PASS"
+        username = "${BACKEND_TIDB_USER}"
+        password = "${BACKEND_TIDB_PASS}"
         backend = true
         frontend = true
         default_hostgroup = 2
